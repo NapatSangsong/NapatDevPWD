@@ -32,13 +32,42 @@ struct NapatDevApp: App {
                     }
                 }
                 .onChange(of: scenePhase) { _, phase in
-                    if phase == .background { lock.lock() }
+                    switch phase {
+                    case .background:
+                        lock.scheduleAutoLock()
+                    case .active, .inactive:
+                        lock.cancelScheduledLock()
+                    @unknown default:
+                        break
+                    }
                 }
                 .onAppear { registerGlobalHotkey() }
         }
         .windowStyle(.titleBar)
         .windowToolbarStyle(.unifiedCompact)
         .defaultSize(width: 1040, height: 680)
+        .commands { appCommands }
+    }
+
+    @CommandsBuilder
+    private var appCommands: some Commands {
+        CommandGroup(replacing: .newItem) {
+            Button("New Item") { AppCommand.newItem.post() }
+                .keyboardShortcut("n", modifiers: .command)
+        }
+        CommandGroup(after: .sidebar) {
+            Button("Focus Search") { AppCommand.focusSearch.post() }
+                .keyboardShortcut("f", modifiers: .command)
+            Button("Quick Open…") { AppCommand.openQuickPalette.post() }
+                .keyboardShortcut("k", modifiers: .command)
+            Divider()
+            Button("Lock Vault") { AppCommand.lockVault.post() }
+                .keyboardShortcut("l", modifiers: .command)
+        }
+        CommandGroup(after: .importExport) {
+            Button("Export Encrypted Backup…") { AppCommand.backupVault.post() }
+            Button("Restore From Backup…") { AppCommand.restoreVault.post() }
+        }
     }
 
     @SceneBuilder

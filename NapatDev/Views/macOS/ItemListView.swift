@@ -6,6 +6,7 @@ struct ItemListView: View {
     @Binding var query: String
     @Binding var selectedID: VaultItem.ID?
     var onNew: () -> Void
+    @FocusState private var searchFocused: Bool
 
     private var filtered: [VaultItem] {
         let base = items.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
@@ -26,6 +27,7 @@ struct ItemListView: View {
             content
         }
         .background(DesignTokens.surface2)
+        .onAppCommand(.focusSearch) { searchFocused = true }
     }
 
     private var header: some View {
@@ -59,6 +61,7 @@ struct ItemListView: View {
             TextField("Search", text: $query)
                 .textFieldStyle(.plain)
                 .font(.nd(12.5))
+                .focused($searchFocused)
         }
         .padding(.horizontal, 10)
         .frame(height: 26)

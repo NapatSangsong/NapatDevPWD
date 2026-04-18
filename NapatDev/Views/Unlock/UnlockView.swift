@@ -91,8 +91,19 @@ struct UnlockView: View {
         Task { @MainActor in
             do {
                 try lock.unlock(password: password)
+            } catch let err as RateLimitError {
+                self.error = err.errorDescription
+                self.password = ""
             } catch {
-                self.error = "Incorrect master password."
+                if lock.isRateLimited {
+                    let secs = Int(lock.rateLimitRemaining.rounded(.up))
+                    self.error = "Too many wrong attempts. Try again in \(secs)s."
+                } else {
+                    let left = max(0, 5 - lock.failedAttempts)
+                    self.error = left > 0
+                        ? "Incorrect master password. \(left) attempts before cooldown."
+                        : "Incorrect master password."
+                }
                 self.password = ""
             }
             attempting = false

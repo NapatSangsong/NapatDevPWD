@@ -29,11 +29,83 @@ struct AnthropicClient {
 
     private let endpoint = URL(string: "https://api.anthropic.com/v1/messages")!
 
+    /// Non-streaming request — still used for fallback paths.
     func sendMessages(
         system: [SystemBlock],
         tools: [ToolDefinition],
         messages: [APIMessage]
     ) async throws -> MessagesResponse {
+        let request = try buildRequest(system: system, tools: tools, messages: messages, stream: false)
+        let (data, response): (Data, URLResponse)
+        do {
+            (data, response) = try await URLSession.shared.data(for: request)
+        } catch let e as URLError {
+            throw AnthropicError.transport(e)
+        }
+        try Self.checkStatus(response, body: data)
+        do {
+            let decoder = JSONDecoder()
+            decoder.keyDecodingStrategy = .convertFromSnakeCase
+            return try decoder.decode(MessagesResponse.self, from: data)
+        } catch {
+            throw AnthropicError.decoding(error)
+        }
+    }
+
+    /// Streams deltas as they arrive. Yields `.textDelta` for every token of
+    /// the assistant text; `.done` fires once the whole response is in with
+    /// the assembled content blocks + stop reason + usage.
+    func streamMessages(
+        system: [SystemBlock],
+        tools: [ToolDefinition],
+        messages: [APIMessage]
+    ) -> AsyncThrowingStream<StreamEvent, Error> {
+        AsyncThrowingStream { continuation in
+            Task {
+                do {
+                    let request = try buildRequest(
+                        system: system, tools: tools, messages: messages, stream: true
+                    )
+                    let (bytes, response) = try await URLSession.shared.bytes(for: request)
+
+                    // Status check: if non-2xx, collect body and throw.
+                    if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+                        var body = Data()
+                        for try await byte in bytes { body.append(byte) }
+                        let text = String(data: body, encoding: .utf8) ?? ""
+                        throw AnthropicError.badStatus(http.statusCode, text)
+                    }
+
+                    var parser = SSEParser()
+                    var assembler = StreamAssembler()
+
+                    for try await line in bytes.lines {
+                        guard let event = parser.ingest(line) else { continue }
+                        if let delta = assembler.consume(event: event) {
+                            continuation.yield(delta)
+                        }
+                    }
+                    continuation.yield(.done(
+                        content: assembler.finalContent,
+                        stopReason: assembler.stopReason,
+                        usage: assembler.usage
+                    ))
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+        }
+    }
+
+    // MARK: - Internals
+
+    private func buildRequest(
+        system: [SystemBlock],
+        tools: [ToolDefinition],
+        messages: [APIMessage],
+        stream: Bool
+    ) throws -> URLRequest {
         var req = URLRequest(url: endpoint)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -43,6 +115,7 @@ struct AnthropicClient {
         let body = MessagesRequest(
             model: model,
             maxTokens: maxTokens,
+            stream: stream,
             system: system,
             tools: tools,
             messages: messages
@@ -51,28 +124,211 @@ struct AnthropicClient {
         let encoder = JSONEncoder()
         encoder.keyEncodingStrategy = .convertToSnakeCase
         req.httpBody = try encoder.encode(body)
+        return req
+    }
 
-        let (data, response): (Data, URLResponse)
-        do {
-            (data, response) = try await URLSession.shared.data(for: req)
-        } catch let e as URLError {
-            throw AnthropicError.transport(e)
-        }
-
+    private static func checkStatus(_ response: URLResponse, body: Data) throws {
         let http = response as? HTTPURLResponse
         let status = http?.statusCode ?? 0
         guard (200...299).contains(status) else {
-            let text = String(data: data, encoding: .utf8) ?? ""
+            let text = String(data: body, encoding: .utf8) ?? ""
             throw AnthropicError.badStatus(status, text)
         }
+    }
+}
 
-        do {
-            let decoder = JSONDecoder()
-            decoder.keyDecodingStrategy = .convertFromSnakeCase
-            return try decoder.decode(MessagesResponse.self, from: data)
-        } catch {
-            throw AnthropicError.decoding(error)
+// MARK: - Streaming events
+
+enum StreamEvent {
+    case textDelta(String)
+    /// Emitted once the full response is assembled. `content` is the list of
+    /// content blocks (text + tool_use) ready to append to the conversation.
+    case done(content: [ContentBlock], stopReason: String?, usage: MessagesResponse.Usage?)
+}
+
+/// Parses an SSE byte stream line-by-line into event objects. Each SSE frame
+/// looks like: `event: name\ndata: { ... }\n\n`. We join `data:` lines until
+/// a blank line, then emit.
+private struct SSEParser {
+    private var currentEvent: String?
+    private var dataLines: [String] = []
+
+    mutating func ingest(_ line: String) -> SSEFrame? {
+        if line.isEmpty {
+            // End of frame.
+            defer {
+                currentEvent = nil
+                dataLines.removeAll()
+            }
+            guard let name = currentEvent, !dataLines.isEmpty else { return nil }
+            let data = dataLines.joined(separator: "\n")
+            return SSEFrame(event: name, data: data)
         }
+        if line.hasPrefix("event:") {
+            currentEvent = line.dropFirst("event:".count).trimmingCharacters(in: .whitespaces)
+        } else if line.hasPrefix("data:") {
+            let trimmed = line.dropFirst("data:".count).trimmingCharacters(in: .whitespaces)
+            dataLines.append(String(trimmed))
+        }
+        return nil
+    }
+}
+
+private struct SSEFrame {
+    let event: String
+    let data: String
+}
+
+fileprivate enum PartialBlock {
+    case text(String)
+    case toolUse(id: String, name: String, jsonAccum: String)
+}
+
+/// Accumulates SSE frames into a full response: text/tool-use content blocks,
+/// stop_reason, usage. Yields per-token text deltas as they arrive.
+private struct StreamAssembler {
+    private var blocks: [PartialBlock] = []
+    var stopReason: String?
+    var usage: MessagesResponse.Usage?
+
+    var finalContent: [ContentBlock] {
+        blocks.map { block in
+            switch block {
+            case .text(let t):
+                return .text(t)
+            case .toolUse(let id, let name, let json):
+                let parsed = (try? JSONDecoder().decode(JSONValue.self, from: Data(json.utf8))) ?? .object([:])
+                return .toolUse(id: id, name: name, input: parsed)
+            }
+        }
+    }
+
+    mutating func consume(event frame: SSEFrame) -> StreamEvent? {
+        guard let data = frame.data.data(using: .utf8) else { return nil }
+        let decoder = JSONDecoder()
+        switch frame.event {
+        case "content_block_start":
+            if let start = try? decoder.decode(ContentBlockStartEnvelope.self, from: data) {
+                blocks.append(start.partial)
+            }
+        case "content_block_delta":
+            if let delta = try? decoder.decode(ContentBlockDeltaEnvelope.self, from: data) {
+                return apply(delta: delta)
+            }
+        case "content_block_stop":
+            break
+        case "message_delta":
+            if let msg = try? decoder.decode(MessageDeltaEnvelope.self, from: data) {
+                if let reason = msg.delta?.stop_reason { stopReason = reason }
+                if let u = msg.usage { usage = usage?.merged(with: u) ?? u }
+            }
+        case "message_start":
+            if let start = try? decoder.decode(MessageStartEnvelope.self, from: data) {
+                usage = start.message.usage
+            }
+        default:
+            break
+        }
+        return nil
+    }
+
+    private mutating func apply(delta: ContentBlockDeltaEnvelope) -> StreamEvent? {
+        guard blocks.indices.contains(delta.index) else { return nil }
+        switch (blocks[delta.index], delta.delta) {
+        case (.text(let existing), .text(let piece)):
+            blocks[delta.index] = .text(existing + piece)
+            return .textDelta(piece)
+        case (.toolUse(let id, let name, let accum), .inputJson(let piece)):
+            blocks[delta.index] = .toolUse(id: id, name: name, jsonAccum: accum + piece)
+            return nil
+        default:
+            return nil
+        }
+    }
+}
+
+// MARK: - Envelope decoders
+
+private struct ContentBlockStartEnvelope: Decodable {
+    let index: Int
+    let contentBlock: Inner
+
+    enum CodingKeys: String, CodingKey {
+        case index
+        case contentBlock = "content_block"
+    }
+
+    struct Inner: Decodable {
+        let type: String
+        let text: String?
+        let id: String?
+        let name: String?
+    }
+
+    var partial: PartialBlock {
+        switch contentBlock.type {
+        case "text":
+            return .text(contentBlock.text ?? "")
+        case "tool_use":
+            return .toolUse(id: contentBlock.id ?? "", name: contentBlock.name ?? "", jsonAccum: "")
+        default:
+            return .text("")
+        }
+    }
+}
+
+private struct ContentBlockDeltaEnvelope: Decodable {
+    let index: Int
+    let delta: Delta
+
+    enum Delta: Decodable {
+        case text(String)
+        case inputJson(String)
+        case other
+
+        private enum CodingKeys: String, CodingKey {
+            case type
+            case text
+            case partial_json
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            let type = try c.decode(String.self, forKey: .type)
+            switch type {
+            case "text_delta":
+                self = .text(try c.decode(String.self, forKey: .text))
+            case "input_json_delta":
+                self = .inputJson(try c.decode(String.self, forKey: .partial_json))
+            default:
+                self = .other
+            }
+        }
+    }
+}
+
+private struct MessageDeltaEnvelope: Decodable {
+    let delta: Delta?
+    let usage: MessagesResponse.Usage?
+
+    struct Delta: Decodable {
+        let stop_reason: String?
+    }
+}
+
+private struct MessageStartEnvelope: Decodable {
+    let message: MessagesResponse
+}
+
+extension MessagesResponse.Usage {
+    /// Merge partial usage from streaming (message_delta only reports output tokens).
+    func merged(with other: MessagesResponse.Usage) -> MessagesResponse.Usage {
+        MessagesResponse.Usage(
+            inputTokens: other.inputTokens ?? inputTokens,
+            outputTokens: other.outputTokens ?? outputTokens,
+            cacheCreationInputTokens: other.cacheCreationInputTokens ?? cacheCreationInputTokens,
+            cacheReadInputTokens: other.cacheReadInputTokens ?? cacheReadInputTokens
+        )
     }
 }
 
@@ -81,6 +337,7 @@ struct AnthropicClient {
 struct MessagesRequest: Encodable {
     let model: String
     let maxTokens: Int
+    let stream: Bool
     let system: [SystemBlock]
     let tools: [ToolDefinition]
     let messages: [APIMessage]

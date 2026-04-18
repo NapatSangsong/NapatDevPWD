@@ -4,11 +4,12 @@ import SwiftUI
 struct VaultSidebar: View {
     @Environment(VaultStore.self) private var store
     @Environment(AppLockModel.self) private var lock
-    @State private var themeManager = ThemeManager()
+    @Environment(ThemeManager.self) private var themeManager
     @State private var biometricError: String?
 
     var body: some View {
-        List {
+        @Bindable var themeBinding = themeManager
+        return List {
             Section {
                 HStack(spacing: 8) {
                     appIconTile
@@ -31,12 +32,25 @@ struct VaultSidebar: View {
                 sidebarRow(icon: "star", label: "Favorites")
             }
             Section("Appearance") {
-                Picker("Theme", selection: $themeManager.theme) {
+                Picker("Theme", selection: $themeBinding.theme) {
                     ForEach(AppTheme.allCases) { theme in
                         Text(theme.label).tag(theme)
                     }
                 }
                 .pickerStyle(.segmented)
+                .listRowBackground(Color.clear)
+            }
+            Section("Auto-lock") {
+                Picker("Lock after", selection: Binding(
+                    get: { lock.autoLockSeconds },
+                    set: { lock.autoLockSeconds = $0 }
+                )) {
+                    Text("Immediately").tag(0)
+                    Text("30 seconds").tag(30)
+                    Text("1 minute").tag(60)
+                    Text("5 minutes").tag(300)
+                }
+                .pickerStyle(.menu)
                 .listRowBackground(Color.clear)
             }
             if lock.biometricsAvailable {

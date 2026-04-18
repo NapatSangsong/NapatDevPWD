@@ -68,6 +68,17 @@ final class VaultStore {
         scheduleSave()
     }
 
+    /// Wholesale replace the in-memory vault (used by restore-from-backup).
+    /// Triggers a save so the new contents hit disk / iCloud.
+    func replaceAll(with newFile: VaultFile) {
+        file = newFile
+        file.updatedAt = .now
+        scheduleSave()
+    }
+
+    /// Expose the current in-memory vault file for export/backup.
+    var currentFile: VaultFile { file }
+
     func toggleFavorite(_ id: VaultItem.ID) {
         guard let idx = file.items.firstIndex(where: { $0.id == id }) else { return }
         file.items[idx].isFavorite.toggle()
