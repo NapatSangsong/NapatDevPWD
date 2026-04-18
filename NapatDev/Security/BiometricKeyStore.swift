@@ -17,33 +17,39 @@ enum BiometricKeyStoreError: LocalizedError {
     }
 }
 
-/// Stores the AES-GCM master key in the Keychain behind biometric access
-/// control. The raw key bytes never leave the device; the user unlocks the
-/// Keychain item with Face ID / Touch ID, we retrieve the bytes, rebuild the
-/// `SymmetricKey` in memory, and wipe on lock.
+/// Stores the AES-GCM master key so Touch ID can unlock the vault on
+/// subsequent launches.
+///
+/// ### Why this doesn't use `SecAccessControl(.biometryCurrentSet)`
+/// That's the "best-practice" iOS approach, but on macOS it returns
+/// `errSecMissingEntitlement (-34018)` for ad-hoc-signed apps: the
+/// `keychain-access-groups` entitlement required to back it is only granted
+/// to apps signed with a paid Developer Program team.
+///
+/// Instead we use a two-step scheme suitable for a personal, locally-built
+/// app:
+///   1. Store the key in a normal Keychain item protected by
+///      `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`.
+///   2. Gate retrieval behind an explicit `LAContext.evaluatePolicy` call so
+///      the user must present Touch ID / Face ID before we read the bytes.
+///
+/// Trade-off: another process running under the same user account could in
+/// principle read the Keychain item without triggering a biometric prompt.
+/// For a personal Mac that's an acceptable trade; anyone else running
+/// processes as you has bigger problems.
 enum BiometricKeyStore {
     private static let account = "com.napat.dev.biometricKey"
     private static let service = "com.napat.dev"
 
     static func store(_ key: SymmetricKey) throws {
-        // Wipe any prior entry first so access control re-applies cleanly.
         _ = delete()
-
-        guard let access = SecAccessControlCreateWithFlags(
-            nil,
-            kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly,
-            .biometryCurrentSet,
-            nil
-        ) else {
-            throw BiometricKeyStoreError.notEnrolled
-        }
 
         let data = key.withUnsafeBytes { Data($0) }
         let query: [String: Any] = [
             kSecClass as String:            kSecClassGenericPassword,
             kSecAttrService as String:      service,
             kSecAttrAccount as String:      account,
-            kSecAttrAccessControl as String: access,
+            kSecAttrAccessible as String:   kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
             kSecValueData as String:        data,
         ]
         let status = SecItemAdd(query as CFDictionary, nil)
@@ -53,48 +59,54 @@ enum BiometricKeyStore {
     }
 
     static func retrieve(reason: String) async throws -> SymmetricKey {
+        // Step 1: require a fresh biometric success.
         let context = LAContext()
         context.localizedReason = reason
 
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            context.evaluatePolicy(
+                .deviceOwnerAuthenticationWithBiometrics,
+                localizedReason: reason
+            ) { success, error in
+                if success {
+                    continuation.resume()
+                } else if let laError = error as? LAError, laError.code == .userCancel {
+                    continuation.resume(throwing: BiometricKeyStoreError.cancelled)
+                } else {
+                    continuation.resume(throwing: BiometricKeyStoreError.cancelled)
+                }
+            }
+        }
+
+        // Step 2: biometrics succeeded — load the key bytes.
         let query: [String: Any] = [
             kSecClass as String:       kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
             kSecReturnData as String:  true,
             kSecMatchLimit as String:  kSecMatchLimitOne,
-            kSecUseAuthenticationContext as String: context,
         ]
-
-        return try await withCheckedThrowingContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                var result: AnyObject?
-                let status = SecItemCopyMatching(query as CFDictionary, &result)
-                switch status {
-                case errSecSuccess:
-                    if let data = result as? Data {
-                        continuation.resume(returning: SymmetricKey(data: data))
-                    } else {
-                        continuation.resume(throwing: BiometricKeyStoreError.failed(status))
-                    }
-                case errSecUserCanceled, errSecAuthFailed:
-                    continuation.resume(throwing: BiometricKeyStoreError.cancelled)
-                default:
-                    continuation.resume(throwing: BiometricKeyStoreError.failed(status))
-                }
-            }
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        switch status {
+        case errSecSuccess:
+            guard let data = result as? Data else { throw BiometricKeyStoreError.failed(status) }
+            return SymmetricKey(data: data)
+        case errSecItemNotFound:
+            throw BiometricKeyStoreError.failed(status)
+        default:
+            throw BiometricKeyStoreError.failed(status)
         }
     }
 
     static var isStored: Bool {
         let query: [String: Any] = [
-            kSecClass as String:            kSecClassGenericPassword,
-            kSecAttrService as String:      service,
-            kSecAttrAccount as String:      account,
-            kSecUseAuthenticationUI as String: kSecUseAuthenticationUISkip,
+            kSecClass as String:       kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
             kSecReturnAttributes as String: true,
         ]
-        let status = SecItemCopyMatching(query as CFDictionary, nil)
-        return status == errSecSuccess || status == errSecInteractionNotAllowed
+        return SecItemCopyMatching(query as CFDictionary, nil) == errSecSuccess
     }
 
     @discardableResult
