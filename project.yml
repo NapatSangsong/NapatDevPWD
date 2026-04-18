@@ -1,0 +1,38 @@
+name: NapatDev
+options:
+  bundleIdPrefix: com.napat.dev
+  createIntermediateGroups: true
+  deploymentTarget:
+    macOS: "14.0"
+  developmentLanguage: en
+
+settings:
+  base:
+    SWIFT_VERSION: "5.10"
+    CURRENT_PROJECT_VERSION: "1"
+    MARKETING_VERSION: "1.0"
+    GENERATE_INFOPLIST_FILE: YES
+    ENABLE_HARDENED_RUNTIME: YES
+    CODE_SIGN_STYLE: Automatic
+    SWIFT_STRICT_CONCURRENCY: minimal
+
+targets:
+  NapatDev-macOS:
+    type: application
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: NapatDev
+    resources:
+      - path: NapatDev/Resources
+      - path: NapatDev/Supporting/Secrets.plist
+        optional: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.napat.dev.NapatDev
+        INFOPLIST_KEY_CFBundleDisplayName: "Napat Dev"
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.utilities
+        INFOPLIST_KEY_NSHumanReadableCopyright: "© 2026 Napat"
+        CODE_SIGN_ENTITLEMENTS: NapatDev/Supporting/NapatDev-macOS.entitlements
+        COMBINE_HIDPI_IMAGES: YES
+        SWIFT_EMIT_LOC_STRINGS: YES

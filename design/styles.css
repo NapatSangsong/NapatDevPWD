@@ -1,0 +1,113 @@
+/* Napat Dev — password manager design system */
+
+:root {
+  /* Warm, cool neutrals + single accent */
+  --bg: #eef1f6;
+  --bg-grad-1: #e8ecf3;
+  --bg-grad-2: #f3eef0;
+  --surface: #ffffff;
+  --surface-2: #f7f8fa;
+  --surface-3: #eef0f4;
+  --hairline: rgba(15, 23, 42, 0.08);
+  --hairline-strong: rgba(15, 23, 42, 0.14);
+
+  --ink: #14181f;
+  --ink-2: #3a4050;
+  --muted: #6b7488;
+  --muted-2: #8a92a6;
+
+  /* Single accent — warm cornflower */
+  --accent: #5b7cfa;
+  --accent-ink: #3d5bd9;
+  --accent-soft: #e5ecff;
+  --accent-glow: rgba(91, 124, 250, 0.25);
+
+  --good: #16a37b;
+
+  /* Theme-aware surfaces for mobile + desktop */
+  --phone-bg: linear-gradient(180deg, #eef1f6 0%, #f4f0f1 100%);
+  --card: rgba(255, 255, 255, 0.85);
+  --card-solid: #ffffff;
+  --chrome: rgba(255, 255, 255, 0.7);
+  --sidebar-grad: linear-gradient(180deg, rgba(232,236,245,0.55), rgba(220,226,238,0.55));
+  --list-bg: rgba(255, 255, 255, 0.55);
+  --status-ink: #000;
+
+  --radius-lg: 18px;
+  --radius-md: 12px;
+  --radius-sm: 8px;
+
+  --shadow-window: 0 1px 0 rgba(255,255,255,0.9) inset,
+                   0 0 0 1px rgba(15, 23, 42, 0.09),
+                   0 30px 80px -20px rgba(20, 24, 31, 0.35),
+                   0 10px 30px -10px rgba(20, 24, 31, 0.22);
+  --shadow-phone: 0 0 0 1px rgba(15, 23, 42, 0.12),
+                  0 40px 90px -20px rgba(20, 24, 31, 0.40),
+                  0 20px 40px -10px rgba(20, 24, 31, 0.25);
+
+  --font-sans: 'Instrument Sans', 'Inter Tight', ui-sans-serif, system-ui, -apple-system, 'Helvetica Neue', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-sans);
+  color: var(--ink);
+  background:
+    radial-gradient(1200px 700px at 20% 10%, #e9ecf3 0%, transparent 60%),
+    radial-gradient(900px 600px at 85% 85%, #efe9ee 0%, transparent 60%),
+    linear-gradient(180deg, #eef1f6 0%, #e8ebf2 100%);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  min-height: 100vh;
+}
+
+button { font-family: inherit; }
+
+/* ── Dark mode ───────────────────────────────────────────── */
+html[data-theme="dark"] {
+  --bg: #0e1117;
+  --surface: #161a22;
+  --surface-2: #1c2230;
+  --surface-3: #232a3a;
+  --hairline: rgba(255, 255, 255, 0.08);
+  --hairline-strong: rgba(255, 255, 255, 0.16);
+
+  --ink: #eef1f8;
+  --ink-2: #c6cdde;
+  --muted: #8892a8;
+  --muted-2: #6b7488;
+
+  --accent-soft: rgba(91, 124, 250, 0.18);
+  --accent-glow: rgba(91, 124, 250, 0.35);
+
+  --shadow-window: 0 1px 0 rgba(255,255,255,0.05) inset,
+                   0 0 0 1px rgba(255, 255, 255, 0.08),
+                   0 30px 80px -20px rgba(0, 0, 0, 0.8),
+                   0 10px 30px -10px rgba(0, 0, 0, 0.5);
+  --shadow-phone: 0 0 0 1px rgba(255, 255, 255, 0.1),
+                  0 40px 90px -20px rgba(0, 0, 0, 0.8),
+                  0 20px 40px -10px rgba(0, 0, 0, 0.5);
+
+  --phone-bg: linear-gradient(180deg, #161a22 0%, #1a1620 100%);
+  --card: rgba(32, 38, 50, 0.75);
+  --card-solid: #1c2230;
+  --chrome: rgba(22, 26, 34, 0.7);
+  --sidebar-grad: linear-gradient(180deg, rgba(30,36,50,0.8), rgba(22,26,34,0.7));
+  --list-bg: rgba(20, 24, 32, 0.4);
+  --status-ink: #fff;
+}
+
+html[data-theme="dark"] body {
+  background:
+    radial-gradient(1200px 700px at 20% 10%, #141a2a 0%, transparent 60%),
+    radial-gradient(900px 600px at 85% 85%, #1a1420 0%, transparent 60%),
+    linear-gradient(180deg, #0b0e14 0%, #0e1118 100%);
+}
+
+/* Utility */
+.mono { font-family: var(--font-mono); font-feature-settings: 'ss01', 'zero'; }
+.hairline { background: var(--hairline); }

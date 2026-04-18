@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Napat Dev — Password manager</title>
+<meta name="viewport" content="width=1200" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css" />
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<body>
+
+<div id="root"></div>
+
+<script type="text/babel" src="components/icons.jsx"></script>
+<script type="text/babel" src="components/data.jsx"></script>
+<script type="text/babel" src="components/desktop.jsx"></script>
+<script type="text/babel" src="components/mobile.jsx"></script>
+
+<script type="text/babel">
+const { useState, useEffect } = React;
+
+const TWEAK_DEFAULS = /*EDITMODE-BEGIN*/{
+  "accent": "cornflower",
+  "density": "airy",
+  "theme": "light"
+}/*EDITMODE-END*/;
+
+const ACCENTS = {
+  cornflower: { accent: '#5b7cfa', ink: '#3d5bd9', soft: '#e5ecff' },
+  fern:       { accent: '#16a37b', ink: '#0e7a5b', soft: '#d9f2e8' },
+  ember:      { accent: '#e0533a', ink: '#b23a24', soft: '#fbe1da' },
+  orchid:     { accent: '#8b5cf6', ink: '#6d3fd8', soft: '#ece2fd' },
+  slate:      { accent: '#475569', ink: '#1e293b', soft: '#e2e8f0' },
+};
+
+function applyAccent(name) {
+  const a = ACCENTS[name] || ACCENTS.cornflower;
+  document.documentElement.style.setProperty('--accent', a.accent);
+  document.documentElement.style.setProperty('--accent-ink', a.ink);
+  document.documentElement.style.setProperty('--accent-soft', a.soft);
+}
+
+function App() {
+  const [selectedId, setSelectedId] = useState('aperio');
+  const [tweaks, setTweaks] = useState(TWEAK_DEFAULS);
+  const [tweaksOpen, setTweaksOpen] = useState(false);
+
+  useEffect(() => { applyAccent(tweaks.accent); }, [tweaks.accent]);
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', tweaks.theme || 'light');
+  }, [tweaks.theme]);
+
+  // Edit mode protocol
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.data?.type === '__activate_edit_mode') setTweaksOpen(true);
+      if (e.data?.type === '__deactivate_edit_mode') setTweaksOpen(false);
+    };
+    window.addEventListener('message', handler);
+    window.parent.postMessage({ type: '__edit_mode_available' }, '*');
+    return () => window.removeEventListener('message', handler);
+  }, []);
+
+  const setTweak = (k, v) => {
+    setTweaks(t => ({ ...t, [k]: v }));
+    window.parent.postMessage({ type: '__edit_mode_set_keys', edits: { [k]: v } }, '*');
+  };
+
+  return (
+    <div style={{
+      minHeight: '100vh',
+      padding: '60px 40px 80px',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      position: 'relative',
+    }}>
+      {/* Ambient accent glow behind stack */}
+      <div style={{
+        position: 'absolute', width: 1100, height: 700, borderRadius: '50%',
+        background: 'radial-gradient(circle, var(--accent-glow), transparent 60%)',
+        filter: 'blur(40px)', opacity: 0.5, pointerEvents: 'none',
+        top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
+      }} />
+
+      {/* Composition: mobile overlapping desktop */}
+      <div style={{ position: 'relative', width: 1020, height: 720 }}>
+        {/* Desktop, top-right */}
+        <div style={{
+          position: 'absolute', right: 0, top: 40,
+          transform: 'rotate(0deg)',
+        }}>
+          <DesktopWindow
+            selectedId={selectedId}
+            setSelectedId={setSelectedId}
+            density={tweaks.density}
+          />
+        </div>
+        {/* Mobile, bottom-left, layered */}
+        <div style={{
+          position: 'absolute', left: 30, top: 140,
+          zIndex: 2,
+        }}>
+          <MobileHome />
+        </div>
+      </div>
+
+      {/* Caption */}
+      <div style={{
+        position: 'absolute', left: 40, top: 30,
+        display: 'flex', alignItems: 'center', gap: 10,
+        color: 'var(--muted)', fontSize: 13, fontWeight: 500,
+      }}>
+        <div style={{
+          width: 24, height: 24, borderRadius: 7,
+          background: 'linear-gradient(135deg, var(--accent), #8aa1ff)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          boxShadow: 'inset 0 0 0 0.5px rgba(255,255,255,0.5)',
+        }}>
+          <svg width="13" height="13" viewBox="0 0 16 16"><path d="M3 7l5-4 5 4v6H3V7z" fill="#fff"/><circle cx="8" cy="9" r="1.5" fill="var(--accent)"/></svg>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap' }}>
+          <span style={{ color: 'var(--ink)', fontWeight: 700 }}>Napat Dev</span>
+          <span>· Password manager, desktop + mobile</span>
+        </div>
+      </div>
+
+      {tweaksOpen && <TweaksPanel tweaks={tweaks} setTweak={setTweak} onClose={() => setTweaksOpen(false)} />}
+    </div>
+  );
+}
+
+function TweaksPanel({ tweaks, setTweak, onClose }) {
+  return (
+    <div style={{
+      position: 'fixed', right: 20, bottom: 20, zIndex: 100,
+      width: 260, borderRadius: 14,
+      background: '#fff',
+      boxShadow: '0 0 0 0.5px rgba(15,23,42,0.1), 0 20px 40px -10px rgba(15,23,42,0.3)',
+      padding: 14, fontFamily: 'var(--font-sans)', fontSize: 13,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 10 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, flex: 1 }}>Tweaks</div>
+        <button onClick={onClose} style={{
+          border: 'none', background: 'transparent', cursor: 'pointer',
+          color: 'var(--muted)', fontSize: 18, lineHeight: 1, padding: 0,
+        }}>×</button>
+      </div>
+
+      <TweakRow label="Theme">
+        <SegControl
+          value={tweaks.theme}
+          onChange={v => setTweak('theme', v)}
+          options={[['light','Light'],['dark','Dark']]}
+        />
+      </TweakRow>
+
+      <TweakRow label="Accent">
+        <div style={{ display: 'flex', gap: 6 }}>
+          {Object.entries(ACCENTS).map(([k, v]) => (
+            <button key={k} onClick={() => setTweak('accent', k)} style={{
+              width: 22, height: 22, borderRadius: '50%',
+              border: tweaks.accent === k ? `2px solid var(--ink)` : `0.5px solid rgba(15,23,42,0.15)`,
+              background: v.accent, cursor: 'pointer', padding: 0,
+            }} />
+          ))}
+        </div>
+      </TweakRow>
+
+      <TweakRow label="Density">
+        <SegControl
+          value={tweaks.density}
+          onChange={v => setTweak('density', v)}
+          options={[['airy','Airy'],['dense','Dense']]}
+        />
+      </TweakRow>
+    </div>
+  );
+}
+
+function TweakRow({ label, children }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 0' }}>
+      <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 500 }}>{label}</div>
+      {children}
+    </div>
+  );
+}
+
+function SegControl({ value, onChange, options }) {
+  return (
+    <div style={{
+      display: 'flex', padding: 2, borderRadius: 7,
+      background: 'rgba(15,23,42,0.06)',
+    }}>
+      {options.map(([v, label]) => (
+        <button key={v} onClick={() => onChange(v)} style={{
+          border: 'none', background: value === v ? '#fff' : 'transparent',
+          padding: '4px 10px', fontSize: 11.5, fontWeight: 600, borderRadius: 5,
+          color: 'var(--ink)', cursor: 'pointer',
+          boxShadow: value === v ? '0 1px 2px rgba(15,23,42,0.1)' : 'none',
+        }}>{label}</button>
+      ))}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+
+</body>
+</html>

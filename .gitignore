@@ -1,0 +1,27 @@
+## Xcode
+build/
+DerivedData/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+xcuserdata/
+*.xcuserstate
+
+## Generated project
+NapatDev.xcodeproj/
+
+## Swift Package Manager
+.build/
+Package.resolved
+.swiftpm/
+
+## macOS / system
+.DS_Store
+.AppleDouble
+.LSOverride
+
+## Local settings
+*.local.*
+
+## Secrets (Anthropic API key) — never commit the real one
+NapatDev/Supporting/Secrets.plist
