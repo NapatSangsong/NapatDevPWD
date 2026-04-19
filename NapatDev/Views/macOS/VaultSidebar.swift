@@ -49,6 +49,7 @@ struct VaultSidebar: View {
                     get: { lock.autoLockSeconds },
                     set: { lock.autoLockSeconds = $0 }
                 )) {
+                    Text("Never (default)").tag(-1)
                     Text("Immediately").tag(0)
                     Text("30 seconds").tag(30)
                     Text("1 minute").tag(60)

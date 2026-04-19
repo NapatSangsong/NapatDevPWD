@@ -26,11 +26,13 @@ final class AppLockModel {
 
     // MARK: - Auto-lock grace period
 
-    /// Seconds after backgrounding before the vault locks. 0 = immediate.
+    /// Seconds after backgrounding before the vault locks. `-1` = never.
+    /// Default is `-1` so the zero-auth intent survives even if the user
+    /// never visits Settings.
     var autoLockSeconds: Int {
         get {
             UserDefaults.standard.object(forKey: Self.autoLockKey) == nil
-                ? 0
+                ? -1
                 : UserDefaults.standard.integer(forKey: Self.autoLockKey)
         }
         set {
@@ -62,11 +64,36 @@ final class AppLockModel {
     private static let lockedUntilKey = "napatdev.lockedUntil"
 
     init() {
-        self.state = MasterPassword.isConfigured ? .locked : .needsSetup
+        // Zero-auth path: if the user has cached the derived key on this Mac
+        // (via the "remember me" flow after first unlock), load it silently
+        // and skip the unlock screen entirely. macOS may prompt "Always
+        // Allow" on the very first read after a rebuild — unavoidable under
+        // ad-hoc signing.
+        if
+            MasterPassword.isConfigured,
+            let keyBytes = KeychainStore.get(.cachedMasterKey),
+            !keyBytes.isEmpty
+        {
+            self.key = SymmetricKey(data: keyBytes)
+            self.state = .unlocked
+        } else {
+            self.state = MasterPassword.isConfigured ? .locked : .needsSetup
+        }
         self.failedAttempts = UserDefaults.standard.integer(forKey: Self.failedAttemptsKey)
         if let stamp = UserDefaults.standard.object(forKey: Self.lockedUntilKey) as? Date, stamp > .now {
             self.lockedOutUntil = stamp
         }
+    }
+
+    private func cacheKey(_ key: SymmetricKey) {
+        let data = key.withUnsafeBytes { Data($0) }
+        KeychainStore.set(data, for: .cachedMasterKey)
+    }
+
+    /// Wipe the cached key so the next launch requires the master password
+    /// again. Called on full reset.
+    private func clearCachedKey() {
+        KeychainStore.delete(for: .cachedMasterKey)
     }
 
     // MARK: - Setup / unlock / lock
@@ -76,6 +103,7 @@ final class AppLockModel {
         self.key = key
         self.state = .unlocked
         resetRateLimit()
+        cacheKey(key)
     }
 
     func unlock(password: String) throws {
@@ -87,6 +115,7 @@ final class AppLockModel {
             self.key = key
             self.state = .unlocked
             resetRateLimit()
+            cacheKey(key)
             if biometricsEnabled && BiometricAuth.available {
                 try? BiometricKeyStore.store(key)
             }
@@ -101,6 +130,7 @@ final class AppLockModel {
         self.key = key
         self.state = .unlocked
         resetRateLimit()
+        cacheKey(key)
     }
 
     func lock() {
@@ -113,6 +143,7 @@ final class AppLockModel {
     func fullReset() {
         MasterPassword.reset()
         BiometricKeyStore.delete()
+        clearCachedKey()
         biometricsEnabled = false
         resetRateLimit()
         self.key = nil
@@ -149,11 +180,13 @@ final class AppLockModel {
 
     func scheduleAutoLock() {
         pendingLockTask?.cancel()
-        let seconds = max(0, autoLockSeconds)
-        if seconds == 0 {
+        // -1 = never auto-lock (the zero-auth default).
+        if autoLockSeconds < 0 { return }
+        if autoLockSeconds == 0 {
             lock()
             return
         }
+        let seconds = autoLockSeconds
         pendingLockTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(seconds))
             guard !Task.isCancelled else { return }

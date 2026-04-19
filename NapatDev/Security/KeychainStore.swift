@@ -4,6 +4,9 @@ import Security
 enum KeychainKey: String {
     case masterSalt = "com.napat.dev.masterSalt"
     case masterVerifier = "com.napat.dev.masterVerifier"
+    /// Cached derived AES-GCM key bytes. Present when the user has opted
+    /// into "no master password" auto-unlock on this Mac.
+    case cachedMasterKey = "com.napat.dev.cachedMasterKey"
 }
 
 enum KeychainStore {
