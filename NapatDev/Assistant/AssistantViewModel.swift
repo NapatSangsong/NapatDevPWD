@@ -8,39 +8,44 @@ final class AssistantViewModel {
     var proposals: [UUID: PendingProposal] = [:]
     var input: String = ""
     var isThinking: Bool = false
-    var streamingID: UUID?
     var isConfigured: Bool { Secrets.anthropicAPIKey != nil }
     var usageSummary: String?
 
     private var apiMessages: [APIMessage] = []
     private let store: VaultStore
-    private let client: AnthropicClient?
+    private let settings: AssistantSettings
+    private let apiKey: String?
+    private var currentTask: Task<Void, Never>?
 
-    init(store: VaultStore) {
+    init(store: VaultStore, settings: AssistantSettings) {
         self.store = store
-        if let key = Secrets.anthropicAPIKey {
-            self.client = AnthropicClient(apiKey: key)
-        } else {
-            self.client = nil
-        }
+        self.settings = settings
+        self.apiKey = Secrets.anthropicAPIKey
     }
 
     // MARK: - Public
 
     func reset() {
+        cancelCurrentTask()
         turns = []
         proposals = [:]
         apiMessages = []
         usageSummary = nil
-        streamingID = nil
     }
 
-    func send() async {
+    func stop() {
+        cancelCurrentTask()
+    }
+
+    func send() {
         let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, !isThinking else { return }
+        guard !text.isEmpty else { return }
+        // If something else is thinking, silently bail — but never while
+        // claiming the UI flag. Clearer UX: cancel and replace.
+        if isThinking { cancelCurrentTask() }
         input = ""
 
-        guard let client else {
+        guard apiKey != nil else {
             turns.append(ChatTurn(
                 role: .system,
                 text: "Set your Anthropic API key in Secrets.plist to use the assistant.",
@@ -53,16 +58,13 @@ final class AssistantViewModel {
         apiMessages.append(APIMessage(role: "user", content: [.text(text)]))
 
         isThinking = true
-        defer { isThinking = false; streamingID = nil }
-
-        do {
-            try await runToolLoop(client: client)
-        } catch {
-            turns.append(ChatTurn(
-                role: .system,
-                text: error.localizedDescription,
-                isError: true
-            ))
+        currentTask = Task { [weak self] in
+            guard let self else { return }
+            await self.runSafeToolLoop()
+            await MainActor.run {
+                self.isThinking = false
+                self.currentTask = nil
+            }
         }
     }
 
@@ -86,9 +88,33 @@ final class AssistantViewModel {
         proposals[id] = proposal
     }
 
-    // MARK: - Tool loop (non-streaming — reliable path)
+    // MARK: - Tool loop
 
-    private func runToolLoop(client: AnthropicClient) async throws {
+    /// Outer wrapper that guarantees *any* failure surfaces in the chat and
+    /// the UI state flag is reset. Catches both thrown errors and cancellation.
+    private func runSafeToolLoop() async {
+        do {
+            try await runToolLoop()
+        } catch is CancellationError {
+            turns.append(ChatTurn(
+                role: .system,
+                text: "Stopped.",
+                isError: false
+            ))
+        } catch {
+            turns.append(ChatTurn(
+                role: .system,
+                text: error.localizedDescription,
+                isError: true
+            ))
+        }
+    }
+
+    private func runToolLoop() async throws {
+        guard let apiKey else { return }
+        var client = AnthropicClient(apiKey: apiKey)
+        client.model = settings.model.rawValue
+
         let system = [SystemBlock(
             text: AssistantTools.systemPrompt,
             cacheControl: CacheControl(type: "ephemeral")
@@ -107,6 +133,7 @@ final class AssistantViewModel {
         let maxIterations = 5
 
         while iterations < maxIterations {
+            try Task.checkCancellation()
             iterations += 1
 
             let response = try await client.sendMessages(
@@ -114,10 +141,11 @@ final class AssistantViewModel {
                 tools: AssistantTools.definitions,
                 messages: apiMessages
             )
+            try Task.checkCancellation()
+
             usageSummary = formatUsage(response.usage)
             apiMessages.append(APIMessage(role: "assistant", content: response.content))
 
-            // Surface text and collect tool calls.
             var toolResults: [ContentBlock] = []
             for block in response.content {
                 switch block {
@@ -139,6 +167,12 @@ final class AssistantViewModel {
             }
             break
         }
+    }
+
+    private func cancelCurrentTask() {
+        currentTask?.cancel()
+        currentTask = nil
+        isThinking = false
     }
 
     private func formatUsage(_ usage: MessagesResponse.Usage?) -> String? {

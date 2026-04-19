@@ -5,10 +5,12 @@ struct VaultSidebar: View {
     @Environment(VaultStore.self) private var store
     @Environment(AppLockModel.self) private var lock
     @Environment(ThemeManager.self) private var themeManager
+    @Environment(AssistantSettings.self) private var assistantSettings
     @State private var biometricError: String?
 
     var body: some View {
         @Bindable var themeBinding = themeManager
+        @Bindable var assistantBinding = assistantSettings
         return List {
             Section {
                 HStack(spacing: 8) {
@@ -49,6 +51,15 @@ struct VaultSidebar: View {
                     Text("30 seconds").tag(30)
                     Text("1 minute").tag(60)
                     Text("5 minutes").tag(300)
+                }
+                .pickerStyle(.menu)
+                .listRowBackground(Color.clear)
+            }
+            Section("Assistant") {
+                Picker("Model", selection: $assistantBinding.model) {
+                    ForEach(AssistantModel.allCases) { m in
+                        Text(m.label).tag(m)
+                    }
                 }
                 .pickerStyle(.menu)
                 .listRowBackground(Color.clear)

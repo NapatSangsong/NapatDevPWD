@@ -6,6 +6,7 @@ struct NapatDevApp: App {
     @State private var lock = AppLockModel()
     @State private var store = VaultStore()
     @State private var theme = ThemeManager()
+    @State private var assistantSettings = AssistantSettings()
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
@@ -20,6 +21,7 @@ struct NapatDevApp: App {
                 .environment(lock)
                 .environment(store)
                 .environment(theme)
+                .environment(assistantSettings)
                 .preferredColorScheme(theme.theme.colorScheme)
                 .onChange(of: lock.state) { _, newState in
                     Task { @MainActor in
@@ -77,6 +79,7 @@ struct NapatDevApp: App {
                 .environment(lock)
                 .environment(store)
                 .environment(theme)
+                .environment(assistantSettings)
                 .preferredColorScheme(theme.theme.colorScheme)
         }
         .menuBarExtraStyle(.window)

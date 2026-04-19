@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ChatView: View {
     @Environment(VaultStore.self) private var store
+    @Environment(AssistantSettings.self) private var assistantSettings
     @State private var viewModel: AssistantViewModel?
     @FocusState private var inputFocused: Bool
 
@@ -16,7 +17,7 @@ struct ChatView: View {
         }
         .onAppear {
             if viewModel == nil {
-                viewModel = AssistantViewModel(store: store)
+                viewModel = AssistantViewModel(store: store, settings: assistantSettings)
             }
         }
     }
@@ -191,7 +192,7 @@ struct ChatView: View {
                 .font(.nd(13))
                 .lineLimit(1...4)
                 .focused($inputFocused)
-                .onSubmit { Task { await vm.send() } }
+                .onSubmit { vm.send() }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
                 .background(DesignTokens.cardSolid, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
@@ -203,21 +204,31 @@ struct ChatView: View {
                 .textInputAutocapitalization(.sentences)
                 #endif
 
-            Button {
-                Task { await vm.send() }
-            } label: {
-                Image(systemName: "arrow.up")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(.white)
-                    .frame(width: 32, height: 32)
-                    .background(
-                        LinearGradient(colors: [Color(hex: 0x6D8BFC), Color(hex: 0x4E6DF0)], startPoint: .top, endPoint: .bottom),
-                        in: Circle()
-                    )
+            if vm.isThinking {
+                Button { vm.stop() } label: {
+                    Image(systemName: "stop.fill")
+                        .font(.system(size: 14))
+                        .foregroundStyle(.white)
+                        .frame(width: 32, height: 32)
+                        .background(Color(hex: 0xE11D48), in: Circle())
+                }
+                .buttonStyle(.plain)
+                .help("Stop")
+            } else {
+                Button { vm.send() } label: {
+                    Image(systemName: "arrow.up")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 32, height: 32)
+                        .background(
+                            LinearGradient(colors: [Color(hex: 0x6D8BFC), Color(hex: 0x4E6DF0)], startPoint: .top, endPoint: .bottom),
+                            in: Circle()
+                        )
+                }
+                .buttonStyle(.plain)
+                .disabled(vm.input.trimmingCharacters(in: .whitespaces).isEmpty)
+                .opacity(vm.input.trimmingCharacters(in: .whitespaces).isEmpty ? 0.5 : 1)
             }
-            .buttonStyle(.plain)
-            .disabled(vm.input.trimmingCharacters(in: .whitespaces).isEmpty || vm.isThinking)
-            .opacity(vm.input.trimmingCharacters(in: .whitespaces).isEmpty || vm.isThinking ? 0.5 : 1)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)

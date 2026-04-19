@@ -26,6 +26,9 @@ struct AnthropicClient {
     var apiKey: String
     var model: String = "claude-haiku-4-5"
     var maxTokens: Int = 2048
+    /// Hard ceiling per request — stops the UI from hanging forever if the
+    /// upstream stalls.
+    var requestTimeout: TimeInterval = 45
 
     private let endpoint = URL(string: "https://api.anthropic.com/v1/messages")!
 
@@ -106,7 +109,7 @@ struct AnthropicClient {
         messages: [APIMessage],
         stream: Bool
     ) throws -> URLRequest {
-        var req = URLRequest(url: endpoint)
+        var req = URLRequest(url: endpoint, timeoutInterval: requestTimeout)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.setValue(apiKey, forHTTPHeaderField: "x-api-key")
