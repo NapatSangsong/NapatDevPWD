@@ -7,6 +7,7 @@ struct NapatDevApp: App {
     @State private var store = VaultStore()
     @State private var theme = ThemeManager()
     @State private var assistantSettings = AssistantSettings()
+    @State private var sync = SyncModel()
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
@@ -22,6 +23,7 @@ struct NapatDevApp: App {
                 .environment(store)
                 .environment(theme)
                 .environment(assistantSettings)
+                .environment(sync)
                 .preferredColorScheme(theme.theme.colorScheme)
                 .onChange(of: lock.state) { _, newState in
                     Task { @MainActor in
@@ -41,6 +43,13 @@ struct NapatDevApp: App {
                         lock.cancelScheduledLock()
                     @unknown default:
                         break
+                    }
+                }
+                // Auto-push to Supabase whenever the vault changes AND we're
+                // unlocked + signed in. SyncModel internally debounces.
+                .onChange(of: store.currentFile.updatedAt) { _, _ in
+                    if let key = lock.key {
+                        sync.push(file: store.currentFile, key: key)
                     }
                 }
                 .onAppear { registerGlobalHotkey() }
@@ -80,6 +89,7 @@ struct NapatDevApp: App {
                 .environment(store)
                 .environment(theme)
                 .environment(assistantSettings)
+                .environment(sync)
                 .preferredColorScheme(theme.theme.colorScheme)
         }
         .menuBarExtraStyle(.window)

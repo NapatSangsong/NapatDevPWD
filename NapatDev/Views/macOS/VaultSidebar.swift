@@ -6,7 +6,9 @@ struct VaultSidebar: View {
     @Environment(AppLockModel.self) private var lock
     @Environment(ThemeManager.self) private var themeManager
     @Environment(AssistantSettings.self) private var assistantSettings
+    @Environment(SyncModel.self) private var sync
     @State private var biometricError: String?
+    @State private var showingSyncSignIn = false
 
     var body: some View {
         @Bindable var themeBinding = themeManager
@@ -77,6 +79,11 @@ struct VaultSidebar: View {
                     .listRowBackground(Color.clear)
                 }
             }
+            if sync.isConfigured {
+                Section("Sync (Supabase)") {
+                    syncStatusRow
+                }
+            }
             Section("System") {
                 Toggle(isOn: Binding(
                     get: { LoginItem.isEnabled },
@@ -97,6 +104,9 @@ struct VaultSidebar: View {
         }
         .listStyle(.sidebar)
         .background(DesignTokens.surface2)
+        .sheet(isPresented: $showingSyncSignIn) {
+            SyncSignInSheet().environment(sync)
+        }
         .alert("Couldn't enable biometrics", isPresented: Binding(
             get: { biometricError != nil },
             set: { if !$0 { biometricError = nil } }
@@ -118,6 +128,57 @@ struct VaultSidebar: View {
 
     private func toggleLoginItem(_ enabled: Bool) {
         try? LoginItem.setEnabled(enabled)
+    }
+
+    @ViewBuilder
+    private var syncStatusRow: some View {
+        switch sync.status {
+        case .disabled:
+            EmptyView()
+        case .signedOut:
+            Button {
+                showingSyncSignIn = true
+            } label: {
+                Label("Sign in to sync", systemImage: "icloud")
+                    .font(.nd(12.5, weight: .medium))
+            }
+            .listRowBackground(Color.clear)
+        case .signedIn(let email):
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.icloud.fill")
+                        .foregroundStyle(DesignTokens.good)
+                    Text("Synced").font(.nd(12, weight: .semibold))
+                    Spacer()
+                    Button("Sign out") { sync.signOut() }
+                        .font(.nd(11))
+                        .buttonStyle(.plain)
+                        .foregroundStyle(DesignTokens.muted)
+                }
+                Text(email)
+                    .font(.nd(11))
+                    .foregroundStyle(DesignTokens.muted)
+                    .lineLimit(1)
+            }
+            .listRowBackground(Color.clear)
+        case .syncing:
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.small)
+                Text("Syncing…").font(.nd(12)).foregroundStyle(DesignTokens.muted)
+            }
+            .listRowBackground(Color.clear)
+        case .error(let msg):
+            VStack(alignment: .leading, spacing: 4) {
+                Label("Sync error", systemImage: "exclamationmark.icloud.fill")
+                    .font(.nd(12, weight: .semibold))
+                    .foregroundStyle(Color(hex: 0xE11D48))
+                Text(msg).font(.nd(10.5)).foregroundStyle(DesignTokens.muted).lineLimit(2)
+                Button("Retry sign in") { showingSyncSignIn = true }
+                    .font(.nd(11))
+                    .buttonStyle(.plain)
+            }
+            .listRowBackground(Color.clear)
+        }
     }
 
     private func sidebarRow(icon: String, label: String) -> some View {
