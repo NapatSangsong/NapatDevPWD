@@ -86,7 +86,7 @@ final class AssistantViewModel {
         proposals[id] = proposal
     }
 
-    // MARK: - Streaming tool loop
+    // MARK: - Tool loop (non-streaming — reliable path)
 
     private func runToolLoop(client: AnthropicClient) async throws {
         let system = [SystemBlock(
@@ -109,59 +109,31 @@ final class AssistantViewModel {
         while iterations < maxIterations {
             iterations += 1
 
-            // Start a new streaming turn; create a placeholder bubble we'll
-            // append deltas into.
-            let streamingTurnID = UUID()
-            turns.append(ChatTurn(id: streamingTurnID, role: .assistant, text: ""))
-            streamingID = streamingTurnID
-
-            var finalContent: [ContentBlock] = []
-            var stopReason: String?
-            var usage: MessagesResponse.Usage?
-
-            let stream = client.streamMessages(
+            let response = try await client.sendMessages(
                 system: system,
                 tools: AssistantTools.definitions,
                 messages: apiMessages
             )
-            for try await event in stream {
-                switch event {
-                case .textDelta(let piece):
-                    if let idx = turns.firstIndex(where: { $0.id == streamingTurnID }) {
-                        turns[idx] = ChatTurn(
-                            id: streamingTurnID,
-                            role: .assistant,
-                            text: turns[idx].text + piece,
-                            createdAt: turns[idx].createdAt
-                        )
-                    }
-                case .done(let content, let reason, let u):
-                    finalContent = content
-                    stopReason = reason
-                    usage = u
-                }
-            }
+            usageSummary = formatUsage(response.usage)
+            apiMessages.append(APIMessage(role: "assistant", content: response.content))
 
-            // If the placeholder ended up empty (e.g. only tool_use blocks),
-            // remove it so the UI doesn't show a blank bubble.
-            if let idx = turns.firstIndex(where: { $0.id == streamingTurnID }),
-               turns[idx].text.isEmpty {
-                turns.remove(at: idx)
-            }
-            streamingID = nil
-            usageSummary = formatUsage(usage)
-            apiMessages.append(APIMessage(role: "assistant", content: finalContent))
-
-            // Dispatch any tool_use blocks, collect results.
+            // Surface text and collect tool calls.
             var toolResults: [ContentBlock] = []
-            for block in finalContent {
-                if case .toolUse(let id, let name, let input) = block {
+            for block in response.content {
+                switch block {
+                case .text(let text) where !text.isEmpty:
+                    turns.append(ChatTurn(role: .assistant, text: text))
+                case .text:
+                    break
+                case .toolUse(let id, let name, let input):
                     let (content, isError) = dispatcher.dispatch(name: name, input: input)
                     toolResults.append(.toolResult(toolUseId: id, content: content, isError: isError))
+                case .toolResult:
+                    break
                 }
             }
 
-            if stopReason == "tool_use", !toolResults.isEmpty {
+            if response.stopReason == "tool_use", !toolResults.isEmpty {
                 apiMessages.append(APIMessage(role: "user", content: toolResults))
                 continue
             }
