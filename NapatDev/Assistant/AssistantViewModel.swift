@@ -11,6 +11,9 @@ final class AssistantViewModel {
     var isConfigured: Bool { Secrets.anthropicAPIKey != nil }
     var usageSummary: String?
 
+    /// User prompts in order — used for up-arrow recall.
+    private(set) var promptHistory: [String] = []
+
     private var apiMessages: [APIMessage] = []
     private let store: VaultStore
     private let settings: AssistantSettings
@@ -31,7 +34,11 @@ final class AssistantViewModel {
         proposals = [:]
         apiMessages = []
         usageSummary = nil
+        promptHistory = []
     }
+
+    /// Returns the most recent user prompt (for up-arrow recall).
+    var lastPrompt: String? { promptHistory.last }
 
     func stop() {
         cancelCurrentTask()
@@ -56,6 +63,7 @@ final class AssistantViewModel {
 
         turns.append(ChatTurn(role: .user, text: text))
         apiMessages.append(APIMessage(role: "user", content: [.text(text)]))
+        if promptHistory.last != text { promptHistory.append(text) }
 
         isThinking = true
         currentTask = Task { [weak self] in

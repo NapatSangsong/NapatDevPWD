@@ -184,15 +184,31 @@ struct ChatView: View {
 
     private func composer(_ vm: AssistantViewModel) -> some View {
         HStack(spacing: 8) {
-            TextField("Ask the assistant…", text: Binding(
+            TextField("Ask the assistant…  (↵ send · ⇧↵ newline · ↑ recall)", text: Binding(
                 get: { vm.input },
                 set: { vm.input = $0 }
             ), axis: .vertical)
                 .textFieldStyle(.plain)
                 .font(.nd(13))
-                .lineLimit(1...4)
+                .lineLimit(1...8)
                 .focused($inputFocused)
-                .onSubmit { vm.send() }
+                .onKeyPress(phases: .down) { press in
+                    // Enter submits; Shift+Enter passes through as newline.
+                    if press.key == .return {
+                        if press.modifiers.contains(.shift) {
+                            return .ignored
+                        }
+                        vm.send()
+                        return .handled
+                    }
+                    // Up-arrow with empty input recalls the most recent prompt.
+                    if press.key == .upArrow, vm.input.isEmpty,
+                       let last = vm.lastPrompt {
+                        vm.input = last
+                        return .handled
+                    }
+                    return .ignored
+                }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
                 .background(DesignTokens.cardSolid, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
