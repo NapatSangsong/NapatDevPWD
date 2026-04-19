@@ -26,6 +26,14 @@ struct ItemDetailView: View {
                     if !item.website.isEmpty {
                         FieldRow(label: "website", value: item.website, copyable: true, isLink: true)
                     }
+                    ForEach(item.environments) { env in
+                        FieldRow(
+                            label: env.label.isEmpty ? "env" : env.label.lowercased(),
+                            value: env.url,
+                            copyable: !env.url.isEmpty,
+                            isLink: !env.url.isEmpty
+                        )
+                    }
                     if !item.notes.isEmpty {
                         FieldRow(label: "notes", value: item.notes)
                     }

@@ -14,6 +14,12 @@ enum AssistantTools {
     Items you see may contain plaintext passwords. Do NOT repeat passwords \
     unless the user explicitly asks. Keep responses short and concrete.
 
+    Items can carry multiple named-environment URLs (e.g. PRD, DEV/UAT, STAGING). \
+    When the user asks to add an environment to an item, include it in the \
+    `environments` array of `propose_update` or `propose_create`. Use concise \
+    uppercase labels like "PRD", "DEV", "UAT", or "DEV/UAT". The `website` field \
+    stays for a single primary URL when only one is needed.
+
     To change the vault, use one of the `propose_*` tools. Proposals are NEVER \
     applied automatically — the user must tap Apply in the UI. After calling a \
     propose tool, tell the user in one short sentence what you proposed.
@@ -26,6 +32,26 @@ enum AssistantTools {
     """
 
     // MARK: - Tool definitions
+
+    /// Array-of-objects schema reused by propose_create / propose_update.
+    private static let environmentsSchema: JSONValue = .object([
+        "type": .string("array"),
+        "description": .string("Labelled per-environment URLs like PRD / DEV/UAT. Full list replaces the item's current environments."),
+        "items": .object([
+            "type": .string("object"),
+            "properties": .object([
+                "label": .object([
+                    "type": .string("string"),
+                    "description": .string("Short uppercase label like PRD, DEV, UAT, DEV/UAT, STAGING."),
+                ]),
+                "url": .object([
+                    "type": .string("string"),
+                    "description": .string("The URL for this environment, including scheme."),
+                ]),
+            ]),
+            "required": .array([.string("label"), .string("url")]),
+        ]),
+    ])
 
     static let definitions: [ToolDefinition] = [
         ToolDefinition(
@@ -70,6 +96,7 @@ enum AssistantTools {
                     "notes":      .object(["type": .string("string")]),
                     "brandSeed":  .object(["type": .string("string")]),
                     "isFavorite": .object(["type": .string("boolean")]),
+                    "environments": environmentsSchema,
                 ]),
                 "required": .array([.string("id")]),
             ])
@@ -87,6 +114,7 @@ enum AssistantTools {
                     "notes":      .object(["type": .string("string")]),
                     "brandSeed":  .object(["type": .string("string")]),
                     "isFavorite": .object(["type": .string("boolean")]),
+                    "environments": environmentsSchema,
                 ]),
                 "required": .array([.string("title")]),
             ])
@@ -217,6 +245,23 @@ struct AssistantToolDispatcher {
                 updated.isFavorite = v
             }
         }
+        if let raw = obj["environments"],
+           case .array(let arr) = raw {
+            let parsed = arr.compactMap { envEntry -> EnvironmentURL? in
+                guard let o = envEntry.objectValue,
+                      let label = o["label"]?.stringValue,
+                      let url = o["url"]?.stringValue
+                else { return nil }
+                return EnvironmentURL(label: label, url: url)
+            }
+            if parsed != current.environments {
+                let oldSummary = current.environments.map { "\($0.label)=\($0.url)" }.joined(separator: ", ")
+                let newSummary = parsed.map { "\($0.label)=\($0.url)" }.joined(separator: ", ")
+                changes["environments"] = (oldSummary.isEmpty ? "—" : oldSummary,
+                                           newSummary.isEmpty ? "—" : newSummary)
+                updated.environments = parsed
+            }
+        }
 
         if changes.isEmpty {
             return ("The proposed update is identical to the current item — nothing to change.", false)
@@ -239,6 +284,16 @@ struct AssistantToolDispatcher {
         else {
             return ("A title is required to create an item.", true)
         }
+        var envs: [EnvironmentURL] = []
+        if let raw = obj["environments"], case .array(let arr) = raw {
+            envs = arr.compactMap { envEntry in
+                guard let o = envEntry.objectValue,
+                      let label = o["label"]?.stringValue,
+                      let url = o["url"]?.stringValue
+                else { return nil }
+                return EnvironmentURL(label: label, url: url)
+            }
+        }
         let item = VaultItem(
             title: title,
             username: obj["username"]?.stringValue ?? "",
@@ -246,7 +301,8 @@ struct AssistantToolDispatcher {
             brandSeed: obj["brandSeed"]?.stringValue ?? "default",
             isFavorite: obj["isFavorite"]?.boolValue ?? false,
             password: obj["password"]?.stringValue ?? "",
-            notes: obj["notes"]?.stringValue ?? ""
+            notes: obj["notes"]?.stringValue ?? "",
+            environments: envs
         )
         let proposal = PendingProposal(
             id: UUID(),

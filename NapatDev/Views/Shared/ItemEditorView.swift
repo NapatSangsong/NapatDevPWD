@@ -37,6 +37,46 @@ struct ItemEditorView: View {
                     SecureField("Password", text: $draft.password)
                     Toggle("Favorite", isOn: $draft.isFavorite)
                 }
+                Section {
+                    ForEach($draft.environments) { $env in
+                        HStack(spacing: 8) {
+                            TextField("Label", text: $env.label)
+                                .frame(maxWidth: 110)
+                                #if canImport(UIKit)
+                                .autocapitalization(.allCharacters)
+                                #endif
+                            TextField("https://…", text: $env.url)
+                                .textContentType(.URL)
+                                #if canImport(UIKit)
+                                .autocapitalization(.none)
+                                #endif
+                            Button(role: .destructive) {
+                                draft.environments.removeAll { $0.id == env.id }
+                            } label: {
+                                Image(systemName: "minus.circle.fill")
+                                    .foregroundStyle(Color(hex: 0xE11D48))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    Button {
+                        draft.environments.append(EnvironmentURL(label: "", url: ""))
+                    } label: {
+                        Label("Add environment", systemImage: "plus")
+                            .font(.nd(12.5, weight: .medium))
+                    }
+                } header: {
+                    HStack {
+                        Text("Environments")
+                        Spacer()
+                        if !draft.environments.isEmpty {
+                            Text("e.g. PRD · DEV/UAT · STAGING")
+                                .font(.nd(10.5))
+                                .foregroundStyle(DesignTokens.muted2)
+                                .textCase(nil)
+                        }
+                    }
+                }
                 Section("Notes") {
                     TextEditor(text: $draft.notes)
                         .frame(minHeight: 100)
