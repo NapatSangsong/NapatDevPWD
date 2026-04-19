@@ -14,11 +14,12 @@ enum AssistantTools {
     Items you see may contain plaintext passwords. Do NOT repeat passwords \
     unless the user explicitly asks. Keep responses short and concrete.
 
-    Items can carry multiple named-environment URLs (e.g. PRD, DEV/UAT, STAGING). \
-    When the user asks to add an environment to an item, include it in the \
-    `environments` array of `propose_update` or `propose_create`. Use concise \
-    uppercase labels like "PRD", "DEV", "UAT", or "DEV/UAT". The `website` field \
-    stays for a single primary URL when only one is needed.
+    Items can carry multiple labelled URLs (e.g. PRD + DEV/UAT for an app, or \
+    Main + Backup for a general site). Use the `environments` array on \
+    `propose_update` / `propose_create` — each entry has a `label` and a `url`. \
+    The `website` field stays for a single primary URL when only one is needed. \
+    Tags are free-form strings like "PTT", "vpn", "work", "account" — pass them \
+    in the `tags` array (full list replaces the existing tags).
 
     To change the vault, use one of the `propose_*` tools. Proposals are NEVER \
     applied automatically — the user must tap Apply in the UI. After calling a \
@@ -32,6 +33,13 @@ enum AssistantTools {
     """
 
     // MARK: - Tool definitions
+
+    /// Array-of-strings schema reused by propose_create / propose_update.
+    private static let tagsSchema: JSONValue = .object([
+        "type": .string("array"),
+        "description": .string("Free-form tags like \"PTT\", \"vpn\", \"work\". Full list replaces the item's current tags."),
+        "items": .object(["type": .string("string")]),
+    ])
 
     /// Array-of-objects schema reused by propose_create / propose_update.
     private static let environmentsSchema: JSONValue = .object([
@@ -97,6 +105,7 @@ enum AssistantTools {
                     "brandSeed":  .object(["type": .string("string")]),
                     "isFavorite": .object(["type": .string("boolean")]),
                     "environments": environmentsSchema,
+                    "tags": tagsSchema,
                 ]),
                 "required": .array([.string("id")]),
             ])
@@ -115,6 +124,7 @@ enum AssistantTools {
                     "brandSeed":  .object(["type": .string("string")]),
                     "isFavorite": .object(["type": .string("boolean")]),
                     "environments": environmentsSchema,
+                    "tags": tagsSchema,
                 ]),
                 "required": .array([.string("title")]),
             ])
@@ -245,6 +255,18 @@ struct AssistantToolDispatcher {
                 updated.isFavorite = v
             }
         }
+        if let raw = obj["tags"], case .array(let arr) = raw {
+            let parsed = arr.compactMap(\.stringValue)
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty }
+            if parsed != current.tags {
+                changes["tags"] = (
+                    current.tags.isEmpty ? "—" : current.tags.joined(separator: ", "),
+                    parsed.isEmpty ? "—" : parsed.joined(separator: ", ")
+                )
+                updated.tags = parsed
+            }
+        }
         if let raw = obj["environments"],
            case .array(let arr) = raw {
             let parsed = arr.compactMap { envEntry -> EnvironmentURL? in
@@ -294,6 +316,12 @@ struct AssistantToolDispatcher {
                 return EnvironmentURL(label: label, url: url)
             }
         }
+        var tags: [String] = []
+        if let raw = obj["tags"], case .array(let arr) = raw {
+            tags = arr.compactMap(\.stringValue)
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty }
+        }
         let item = VaultItem(
             title: title,
             username: obj["username"]?.stringValue ?? "",
@@ -302,7 +330,8 @@ struct AssistantToolDispatcher {
             isFavorite: obj["isFavorite"]?.boolValue ?? false,
             password: obj["password"]?.stringValue ?? "",
             notes: obj["notes"]?.stringValue ?? "",
-            environments: envs
+            environments: envs,
+            tags: tags
         )
         let proposal = PendingProposal(
             id: UUID(),

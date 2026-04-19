@@ -36,6 +36,9 @@ struct VaultItem: Codable, Identifiable, Hashable {
     var updatedAt: Date = .now
     /// Labelled per-environment URLs (e.g. PRD / DEV / UAT).
     var environments: [EnvironmentURL] = []
+    /// Free-form tags (e.g. "PTT", "vpn", "work", "account"). Normalised to
+    /// the case the user types; dedup happens at the UI level.
+    var tags: [String] = []
 
     init(
         id: UUID = UUID(),
@@ -49,6 +52,7 @@ struct VaultItem: Codable, Identifiable, Hashable {
         password: String = "",
         notes: String = "",
         environments: [EnvironmentURL] = [],
+        tags: [String] = [],
         createdAt: Date = .now,
         updatedAt: Date = .now
     ) {
@@ -63,6 +67,7 @@ struct VaultItem: Codable, Identifiable, Hashable {
         self.password = password
         self.notes = notes
         self.environments = environments
+        self.tags = tags
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }
@@ -84,6 +89,7 @@ struct VaultItem: Codable, Identifiable, Hashable {
         self.createdAt    = (try c.decodeIfPresent(Date.self,              forKey: .createdAt))    ?? .now
         self.updatedAt    = (try c.decodeIfPresent(Date.self,              forKey: .updatedAt))    ?? .now
         self.environments = (try c.decodeIfPresent([EnvironmentURL].self,  forKey: .environments)) ?? []
+        self.tags         = (try c.decodeIfPresent([String].self,          forKey: .tags))         ?? []
     }
 
     var groupLetter: String {

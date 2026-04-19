@@ -67,14 +67,24 @@ struct ItemEditorView: View {
                     }
                 } header: {
                     HStack {
-                        Text("Environments")
+                        Text("URLs")
                         Spacer()
-                        if !draft.environments.isEmpty {
-                            Text("e.g. PRD · DEV/UAT · STAGING")
-                                .font(.nd(10.5))
-                                .foregroundStyle(DesignTokens.muted2)
-                                .textCase(nil)
-                        }
+                        Text("label each \u{2014} PRD / DEV · Main / Backup · Mobile …")
+                            .font(.nd(10.5))
+                            .foregroundStyle(DesignTokens.muted2)
+                            .textCase(nil)
+                    }
+                }
+                Section {
+                    TagEditor(tags: $draft.tags)
+                } header: {
+                    HStack {
+                        Text("Tags")
+                        Spacer()
+                        Text("e.g. PTT · vpn · work · account")
+                            .font(.nd(10.5))
+                            .foregroundStyle(DesignTokens.muted2)
+                            .textCase(nil)
                     }
                 }
                 Section("Notes") {

@@ -6,6 +6,7 @@ struct ItemDetailView: View {
     var onEdit: () -> Void
 
     @Environment(VaultStore.self) private var store
+    @Environment(TagFilterModel.self) private var tagFilter
 
     var body: some View {
         ScrollView {
@@ -13,7 +14,19 @@ struct ItemDetailView: View {
                 header
                     .padding(.horizontal, 28)
                     .padding(.top, 28)
-                    .padding(.bottom, 18)
+                    .padding(.bottom, 8)
+                if !item.tags.isEmpty {
+                    FlowLayout(spacing: 6) {
+                        ForEach(item.tags, id: \.self) { tag in
+                            TagChip(
+                                text: tag,
+                                selected: tagFilter.selected == tag
+                            ) { tagFilter.toggle(tag) }
+                        }
+                    }
+                    .padding(.horizontal, 28)
+                    .padding(.bottom, 10)
+                }
 
                 VStack(spacing: 0) {
                     FieldRow(label: "username", value: item.username, copyable: !item.username.isEmpty)

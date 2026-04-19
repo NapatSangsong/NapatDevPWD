@@ -6,13 +6,27 @@ struct ItemListView: View {
     @Binding var query: String
     @Binding var selectedID: VaultItem.ID?
     var onNew: () -> Void
+    @Environment(TagFilterModel.self) private var tagFilter
     @FocusState private var searchFocused: Bool
 
     private var filtered: [VaultItem] {
-        let base = items.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
-        guard !query.isEmpty else { return base }
+        let sorted = items.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+        let tagScoped = tagFilter.apply(to: sorted)
+        guard !query.isEmpty else { return tagScoped }
+        // `#foo` searches tag only; otherwise title/username/website/tag all match.
+        if query.hasPrefix("#") {
+            let q = query.dropFirst().lowercased()
+            return tagScoped.filter { item in
+                item.tags.contains(where: { $0.lowercased().contains(q) })
+            }
+        }
         let q = query.lowercased()
-        return base.filter { $0.title.lowercased().contains(q) || $0.username.lowercased().contains(q) }
+        return tagScoped.filter {
+            $0.title.lowercased().contains(q) ||
+            $0.username.lowercased().contains(q) ||
+            $0.website.lowercased().contains(q) ||
+            $0.tags.contains(where: { $0.lowercased().contains(q) })
+        }
     }
 
     private var grouped: [(String, [VaultItem])] {
@@ -24,10 +38,37 @@ struct ItemListView: View {
         VStack(spacing: 0) {
             header
             Divider().background(DesignTokens.hairline)
+            tagChipsBar
             content
         }
         .background(DesignTokens.surface2)
         .onAppCommand(.focusSearch) { searchFocused = true }
+    }
+
+    @ViewBuilder
+    private var tagChipsBar: some View {
+        let tags = TagFilterModel.allTags(from: items)
+        if !tags.isEmpty {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    TagChip(text: "All", selected: tagFilter.selected == nil) {
+                        tagFilter.selected = nil
+                    }
+                    ForEach(tags, id: \.tag) { entry in
+                        TagChip(
+                            text: "\(entry.tag) · \(entry.count)",
+                            selected: tagFilter.selected == entry.tag
+                        ) {
+                            tagFilter.toggle(entry.tag)
+                        }
+                    }
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+            }
+            .background(DesignTokens.cardSolid.opacity(0.4))
+            Divider().background(DesignTokens.hairline)
+        }
     }
 
     private var header: some View {

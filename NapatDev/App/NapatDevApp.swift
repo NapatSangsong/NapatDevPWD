@@ -8,6 +8,7 @@ struct NapatDevApp: App {
     @State private var theme = ThemeManager()
     @State private var assistantSettings = AssistantSettings()
     @State private var sync = SyncModel()
+    @State private var tagFilter = TagFilterModel()
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
@@ -24,6 +25,7 @@ struct NapatDevApp: App {
                 .environment(theme)
                 .environment(assistantSettings)
                 .environment(sync)
+                .environment(tagFilter)
                 .preferredColorScheme(theme.theme.colorScheme)
                 .onChange(of: lock.state) { _, newState in
                     Task { @MainActor in
@@ -90,6 +92,7 @@ struct NapatDevApp: App {
                 .environment(theme)
                 .environment(assistantSettings)
                 .environment(sync)
+                .environment(tagFilter)
                 .preferredColorScheme(theme.theme.colorScheme)
         }
         .menuBarExtraStyle(.window)
